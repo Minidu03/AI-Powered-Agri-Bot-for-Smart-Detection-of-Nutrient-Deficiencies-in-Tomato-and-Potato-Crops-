@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AgriRobot — Plant Intelligence Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:        #0a0f0a;
+    --surface:   #111811;
+    --surface2:  #172217;
+    --border:    #1e2e1e;
+    --green:     #22c55e;
+    --green-dim: #166534;
+    --cyan:      #06b6d4;
+    --yellow:    #eab308;
+    --red:       #ef4444;
+    --orange:    #f97316;
+    --text:      #e2f0e2;
+    --muted:     #6b8f6b;
+    --font-head: 'Syne', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-head);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Animated grid background */
+  body::before {
+    content:'';
+    position:fixed; inset:0; z-index:0;
+    background-image:
+      linear-gradient(rgba(34,197,94,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(34,197,94,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events:none;
+  }
+
+  .wrapper { position:relative; z-index:1; padding:24px; max-width:1400px; margin:0 auto; }
+
+  /* ── HEADER ── */
+  header {
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:28px;
+    padding-bottom:20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    display:flex; align-items:center; gap:14px;
+  }
+  .logo-icon {
+    width:48px; height:48px;
+    background: linear-gradient(135deg, var(--green), #166534);
+    border-radius:12px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:22px;
+    box-shadow: 0 0 24px rgba(34,197,94,0.3);
+  }
+  .logo-text h1 { font-size:22px; font-weight:800; letter-spacing:-0.5px; }
+  .logo-text span { font-size:12px; color:var(--muted); font-family:var(--font-mono); }
+
+  .header-right { display:flex; align-items:center; gap:16px; }
+  .status-dot {
+    width:8px; height:8px; border-radius:50%;
+    background:var(--green);
+    box-shadow: 0 0 10px var(--green);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity:1; transform:scale(1); }
+    50%      { opacity:0.5; transform:scale(1.3); }
+  }
+  .server-status {
+    font-family:var(--font-mono); font-size:12px; color:var(--muted);
+    display:flex; align-items:center; gap:8px;
+  }
+  #scan-counter {
+    background:var(--surface2); border:1px solid var(--border);
+    padding:6px 14px; border-radius:20px;
+    font-family:var(--font-mono); font-size:12px; color:var(--green);
+  }
+
+  /* ── MAIN GRID ── */
+  .main-grid {
+    display:grid;
+    grid-template-columns: 1fr 380px;
+    grid-template-rows: auto auto;
+    gap:20px;
+  }
+
+  /* ── PANEL BASE ── */
+  .panel {
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:16px;
+    overflow:hidden;
+  }
+  .panel-header {
+    padding:16px 20px;
+    border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .panel-title {
+    font-size:12px; font-weight:700; letter-spacing:2px;
+    text-transform:uppercase; color:var(--muted);
+    display:flex; align-items:center; gap:8px;
+  }
+  .panel-title .dot {
+    width:6px; height:6px; border-radius:50%;
+    background:var(--green);
+  }
+  .panel-body { padding:20px; }
+
+  /* ── CAMERA PANEL ── */
+  .camera-panel { grid-row: span 1; }
+  .camera-wrap {
+    position:relative;
+    background:#000;
+    border-radius:12px;
+    overflow:hidden;
+    aspect-ratio:4/3;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .camera-wrap img {
+    width:100%; height:100%; object-fit:cover;
+    display:block;
+  }
+  #captured-img {
+    width:100%; height:100%; object-fit:cover;
+    transition: opacity 0.4s;
+  }
+  .camera-overlay {
+    position:absolute; inset:0;
+    pointer-events:none;
+  }
+  /* Corner brackets */
+  .corner { position:absolute; width:20px; height:20px; }
+  .corner.tl { top:12px; left:12px; border-top:2px solid var(--green); border-left:2px solid var(--green); }
+  .corner.tr { top:12px; right:12px; border-top:2px solid var(--green); border-right:2px solid var(--green); }
+  .corner.bl { bottom:12px; left:12px; border-bottom:2px solid var(--green); border-left:2px solid var(--green); }
+  .corner.br { bottom:12px; right:12px; border-bottom:2px solid var(--green); border-right:2px solid var(--green); }
+
+  .scan-line {
+    position:absolute; left:0; right:0; height:2px;
+    background:linear-gradient(90deg, transparent, var(--green), transparent);
+    opacity:0;
+    animation: scanline 3s ease-in-out infinite;
+  }
+  @keyframes scanline {
+    0%   { top:0%; opacity:0; }
+    10%  { opacity:0.8; }
+    90%  { opacity:0.8; }
+    100% { top:100%; opacity:0; }
+  }
+  .scan-line.active { animation-play-state:running; }
+
+  .no-image-placeholder {
+    position:absolute; inset:0;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    gap:12px; color:var(--muted);
+  }
+  .no-image-placeholder .icon { font-size:48px; opacity:0.3; }
+  .no-image-placeholder p { font-family:var(--font-mono); font-size:12px; }
+
+  .timestamp-badge {
+    position:absolute; bottom:12px; left:12px;
+    background:rgba(0,0,0,0.7); border:1px solid var(--border);
+    padding:4px 10px; border-radius:6px;
+    font-family:var(--font-mono); font-size:11px; color:var(--green);
+  }
+
+  /* Capture button */
+  .capture-btn {
+    width:100%; margin-top:16px;
+    padding:14px;
+    background:linear-gradient(135deg, #166534, #15803d);
+    border:1px solid var(--green);
+    border-radius:10px;
+    color:#fff; font-family:var(--font-head);
+    font-size:14px; font-weight:700; letter-spacing:1px;
+    cursor:pointer;
+    transition: all 0.2s;
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    position:relative; overflow:hidden;
+  }
+  .capture-btn:hover { background:linear-gradient(135deg, #15803d, #16a34a); box-shadow:0 0 20px rgba(34,197,94,0.3); }
+  .capture-btn:active { transform:scale(0.98); }
+  .capture-btn.scanning {
+    background:linear-gradient(135deg, #1e3a1e, #1e3a1e);
+    border-color:var(--muted);
+    pointer-events:none;
+  }
+  .capture-btn .spinner {
+    width:16px; height:16px;
+    border:2px solid rgba(255,255,255,0.3);
+    border-top-color:#fff;
+    border-radius:50%;
+    animation:spin 0.8s linear infinite;
+    display:none;
+  }
+  .capture-btn.scanning .spinner { display:block; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  /* ── RESULT PANEL ── */
+  .result-panel { grid-column:2; grid-row:1 / span 2; }
+
+  .prediction-card {
+    background:var(--surface2);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:20px;
+    margin-bottom:16px;
+    transition: border-color 0.4s;
+  }
+  .prediction-card.active { border-color: var(--result-color, var(--green)); }
+
+  .pred-label {
+    font-family:var(--font-mono); font-size:11px;
+    color:var(--muted); letter-spacing:2px; text-transform:uppercase;
+    margin-bottom:10px;
+  }
+  .pred-value {
+    font-size:20px; font-weight:800;
+    color: var(--result-color, var(--text));
+    line-height:1.2; margin-bottom:6px;
+    transition: color 0.4s;
+  }
+  .pred-crop { font-size:13px; color:var(--muted); font-family:var(--font-mono); }
+
+  /* Confidence bar */
+  .conf-wrap { margin-top:16px; }
+  .conf-label {
+    display:flex; justify-content:space-between;
+    font-family:var(--font-mono); font-size:11px; color:var(--muted);
+    margin-bottom:8px;
+  }
+  .conf-bar-bg {
+    height:6px; background:var(--border); border-radius:3px; overflow:hidden;
+  }
+  .conf-bar-fill {
+    height:100%; border-radius:3px;
+    background: var(--result-color, var(--green));
+    width:0%; transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+    box-shadow: 0 0 8px var(--result-color, var(--green));
+  }
+
+  /* Pump status */
+  .pump-card {
+    border-radius:12px; padding:16px 20px;
+    border:1px solid var(--border);
+    background:var(--surface2);
+    margin-bottom:16px;
+    transition: all 0.4s;
+  }
+  .pump-card.active {
+    border-color: var(--pump-color, var(--green));
+    box-shadow: 0 0 20px rgba(0,0,0,0.5), inset 0 0 30px rgba(0,0,0,0.3);
+  }
+  .pump-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .pump-label { font-family:var(--font-mono); font-size:11px; color:var(--muted); letter-spacing:2px; }
+  .pump-badge {
+    padding:3px 10px; border-radius:20px;
+    font-size:10px; font-family:var(--font-mono); font-weight:500;
+    background: rgba(34,197,94,0.1); color:var(--green);
+    border:1px solid var(--green-dim);
+    transition: all 0.4s;
+  }
+  .pump-badge.spraying {
+    background:rgba(34,197,94,0.2);
+    animation: blink 0.8s infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .pump-name {
+    font-size:22px; font-weight:800;
+    color:var(--pump-color, var(--muted));
+    transition: color 0.4s;
+  }
+  .pump-relays {
+    display:grid; grid-template-columns:1fr 1fr;
+    gap:8px; margin-top:14px;
+  }
+  .relay-item {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:8px; padding:10px 12px;
+    display:flex; align-items:center; gap:8px;
+    font-family:var(--font-mono); font-size:11px;
+    transition: all 0.3s;
+  }
+  .relay-item.on {
+    border-color:var(--pump-color, var(--green));
+    background:rgba(34,197,94,0.05);
+  }
+  .relay-dot {
+    width:8px; height:8px; border-radius:50%;
+    background:var(--border); flex-shrink:0;
+    transition: all 0.3s;
+  }
+  .relay-item.on .relay-dot {
+    background:var(--pump-color, var(--green));
+    box-shadow:0 0 6px var(--pump-color, var(--green));
+  }
+
+  /* History */
+  .history-list { display:flex; flex-direction:column; gap:8px; }
+  .history-item {
+    background:var(--surface2); border:1px solid var(--border);
+    border-radius:8px; padding:10px 14px;
+    display:flex; align-items:center; gap:12px;
+    animation:slideIn 0.3s ease;
+  }
+  @keyframes slideIn { from{opacity:0;transform:translateX(10px)} to{opacity:1;transform:none} }
+  .history-time { font-family:var(--font-mono); font-size:10px; color:var(--muted); white-space:nowrap; }
+  .history-pred { font-size:12px; font-weight:600; flex:1; }
+  .history-conf { font-family:var(--font-mono); font-size:10px; color:var(--muted); }
+  .history-pump {
+    font-size:10px; padding:2px 8px; border-radius:10px;
+    background:var(--surface); border:1px solid var(--border);
+    font-family:var(--font-mono);
+  }
+  .empty-history {
+    text-align:center; padding:24px;
+    font-family:var(--font-mono); font-size:12px; color:var(--muted);
+  }
+
+  /* History clickable */
+  .history-item {
+    cursor: pointer;
+  }
+  .history-item:hover {
+    border-color: var(--green-dim);
+    background: rgba(34,197,94,0.05);
+    transform: translateX(2px);
+    transition: all 0.15s;
+  }
+
+  /* ── INFOGRAPHIC MODAL ── */
+  #info-modal {
+    display: none;
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.85);
+    backdrop-filter: blur(6px);
+    align-items: center; justify-content: center;
+  }
+  #info-modal.open { display: flex; }
+  .modal-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    width: min(900px, 96vw);
+    max-height: 92vh;
+    overflow-y: auto;
+    position: relative;
+    animation: modalIn 0.25s cubic-bezier(0.34,1.56,0.64,1);
+  }
+  @keyframes modalIn { from{opacity:0;transform:scale(0.92)} to{opacity:1;transform:scale(1)} }
+
+  .modal-close {
+    position: sticky; top: 16px; float: right; margin: 16px 16px 0 0;
+    width: 34px; height: 34px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 50%; cursor: pointer; z-index: 1;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; color: var(--muted); transition: all 0.2s;
+  }
+  .modal-close:hover { background: var(--red); color: #fff; border-color: var(--red); }
+
+  .modal-content { padding: 24px 28px 28px; }
+  .modal-title {
+    font-size: 13px; font-weight: 700; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--muted);
+    font-family: var(--font-mono); margin-bottom: 20px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .modal-title::before {
+    content: ''; display: inline-block; width: 6px; height: 6px;
+    border-radius: 50%; background: var(--green);
+  }
+
+  /* Two-column layout inside modal */
+  .modal-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  @media(max-width:640px) { .modal-grid { grid-template-columns: 1fr; } }
+
+  .modal-img-wrap {
+    border-radius: 12px; overflow: hidden;
+    background: #000; aspect-ratio: 4/3;
+    position: relative; border: 1px solid var(--border);
+  }
+  .modal-img-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .modal-img-badge {
+    position: absolute; bottom: 10px; left: 10px;
+    background: rgba(0,0,0,0.75); border: 1px solid var(--border);
+    padding: 3px 10px; border-radius: 6px;
+    font-family: var(--font-mono); font-size: 11px; color: var(--green);
+  }
+
+  /* Info cards on right */
+  .info-cards { display: flex; flex-direction: column; gap: 12px; }
+  .info-card {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px;
+  }
+  .info-card-label {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px;
+    color: var(--muted); text-transform: uppercase; margin-bottom: 8px;
+  }
+  .info-card-value {
+    font-size: 22px; font-weight: 800; line-height: 1.1;
+  }
+  .info-card-sub { font-size: 12px; color: var(--muted); margin-top: 4px; font-family: var(--font-mono); }
+
+  /* Confidence bar inside modal */
+  .modal-conf-bar-bg {
+    height: 8px; background: var(--border); border-radius: 4px;
+    overflow: hidden; margin-top: 10px;
+  }
+  .modal-conf-bar-fill {
+    height: 100%; border-radius: 4px;
+    transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+    box-shadow: 0 0 8px var(--bar-color, #22c55e);
+    background: var(--bar-color, #22c55e);
+  }
+
+  /* Nutrient advice section */
+  .advice-section {
+    margin-top: 20px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px;
+  }
+  .advice-title {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px;
+    color: var(--muted); text-transform: uppercase; margin-bottom: 12px;
+  }
+  .advice-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  @media(max-width:500px) { .advice-grid { grid-template-columns: 1fr 1fr; } }
+  .advice-item {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 10px; text-align: center;
+  }
+  .advice-icon { font-size: 22px; margin-bottom: 6px; }
+  .advice-label { font-size: 10px; font-family: var(--font-mono); color: var(--muted); }
+  .advice-val   { font-size: 12px; font-weight: 700; margin-top: 2px; }
+
+  /* Relay status row */
+  .relay-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .relay-pill {
+    padding: 4px 12px; border-radius: 20px;
+    font-size: 11px; font-family: var(--font-mono);
+    border: 1px solid var(--border); background: var(--surface);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .relay-pill.active {
+    border-color: var(--pill-color, #22c55e);
+    color: var(--pill-color, #22c55e);
+    background: rgba(34,197,94,0.08);
+  }
+  .relay-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border); }
+  .relay-pill.active .relay-pill-dot { background: var(--pill-color, #22c55e); box-shadow: 0 0 5px var(--pill-color, #22c55e); }
+
+  /* Live stream panel */
+  .stream-panel { grid-column:1; }
+  .stream-wrap {
+    border-radius:12px; overflow:hidden;
+    background:#000; aspect-ratio:4/3;
+    position:relative;
+  }
+  .stream-wrap img { width:100%; height:100%; object-fit:cover; }
+  .stream-label {
+    position:absolute; top:12px; left:12px;
+    background:rgba(239,68,68,0.9);
+    padding:3px 10px; border-radius:4px;
+    font-family:var(--font-mono); font-size:11px; font-weight:500;
+    display:flex; align-items:center; gap:6px;
+  }
+  .live-dot { width:6px; height:6px; border-radius:50%; background:#fff; animation:pulse 1s infinite; }
+
+  /* Notification toast */
+  #toast {
+    position:fixed; bottom:24px; right:24px;
+    background:var(--surface2); border:1px solid var(--green);
+    border-radius:12px; padding:14px 20px;
+    font-family:var(--font-mono); font-size:13px;
+    display:none; z-index:999;
+    animation:toastIn 0.3s ease;
+    box-shadow:0 0 30px rgba(34,197,94,0.2);
+  }
+  @keyframes toastIn { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:none} }
+
+  /* Responsive */
+  @media(max-width:900px) {
+    .main-grid { grid-template-columns:1fr; }
+    .result-panel { grid-column:1; grid-row:auto; }
+  }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🌿</div>
+      <div class="logo-text">
+        <h1>AgriRobot Intelligence</h1>
+        <span>PLANT NUTRIENT DETECTION SYSTEM</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="server-status">
+        <div class="status-dot" id="server-dot"></div>
+        <span id="server-label">SERVER ONLINE</span>
+      </div>
+      <div id="scan-counter">SCANS: <span id="scan-count">0</span></div>
+    </div>
+  </header>
+
+  <div class="main-grid">
+
+    <!-- LEFT: Camera + Capture -->
+    <div class="panel camera-panel">
+      <div class="panel-header">
+        <span class="panel-title"><span class="dot"></span>CAPTURED IMAGE</span>
+        <span id="img-timestamp" style="font-family:var(--font-mono);font-size:11px;color:var(--muted);">—</span>
+      </div>
+      <div class="panel-body">
+        <div class="camera-wrap" id="camera-wrap">
+          <img id="captured-img" src="" alt="" style="display:none"/>
+          <div class="no-image-placeholder" id="placeholder">
+            <div class="icon">📷</div>
+            <p>Send 'C' via Bluetooth or click below</p>
+          </div>
+          <div class="camera-overlay">
+            <div class="corner tl"></div>
+            <div class="corner tr"></div>
+            <div class="corner bl"></div>
+            <div class="corner br"></div>
+            <div class="scan-line" id="scan-line"></div>
+          </div>
+          <div class="timestamp-badge" id="ts-badge" style="display:none"></div>
+        </div>
+        <button class="capture-btn" id="capture-btn" onclick="triggerCapture()">
+          <div class="spinner"></div>
+          <span id="btn-text">📸 CAPTURE & ANALYSE</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- RIGHT: Results -->
+    <div class="panel result-panel">
+      <div class="panel-header">
+        <span class="panel-title"><span class="dot"></span>AI ANALYSIS</span>
+      </div>
+      <div class="panel-body">
+
+        <!-- Prediction -->
+        <div class="prediction-card" id="pred-card" style="--result-color:#22c55e">
+          <div class="pred-label">DETECTED CONDITION</div>
+          <div class="pred-value" id="pred-value">Waiting for scan...</div>
+          <div class="pred-crop" id="pred-crop"></div>
+          <div class="conf-wrap">
+            <div class="conf-label">
+              <span>CONFIDENCE</span>
+              <span id="conf-pct">—</span>
+            </div>
+            <div class="conf-bar-bg">
+              <div class="conf-bar-fill" id="conf-bar" style="--result-color:#22c55e"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pump Status -->
+        <div class="pump-card" id="pump-card" style="--pump-color:#6b8f6b">
+          <div class="pump-header">
+            <span class="pump-label">PUMP ACTIVATED</span>
+            <span class="pump-badge" id="pump-badge">IDLE</span>
+          </div>
+          <div class="pump-name" id="pump-name">—</div>
+          <div class="pump-relays">
+            <div class="relay-item" id="relay-1">
+              <div class="relay-dot"></div><span>Nitrogen (R1)</span>
+            </div>
+            <div class="relay-item" id="relay-2">
+              <div class="relay-dot"></div><span>Potassium (R2)</span>
+            </div>
+            <div class="relay-item" id="relay-3">
+              <div class="relay-dot"></div><span>Phosphorus (R3)</span>
+            </div>
+            <div class="relay-item" id="relay-4">
+              <div class="relay-dot"></div><span>Water (R4)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- History -->
+        <div class="panel-header" style="padding:12px 0 10px; border:none; border-top:1px solid var(--border); margin-top:4px;">
+          <span class="panel-title" style="font-size:11px;">SCAN HISTORY</span>
+        </div>
+        <div id="history-list" class="history-list">
+          <div class="empty-history">No scans yet</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- BOTTOM: Live Stream -->
+    <div class="panel stream-panel">
+      <div class="panel-header">
+        <span class="panel-title"><span class="dot"></span>LIVE CAMERA FEED</span>
+        <span style="font-family:var(--font-mono);font-size:11px;color:var(--muted);">{{ cam_ip }}</span>
+      </div>
+      <div class="panel-body">
+        <div class="stream-wrap">
+          <img src="{{ stream_url }}" alt="Live stream"
+               onerror="this.style.display='none'; document.getElementById('stream-fallback').style.display='flex'"/>
+          <div id="stream-fallback" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:var(--muted);">
+            <span style="font-size:32px;opacity:0.3">📡</span>
+            <span style="font-family:var(--font-mono);font-size:12px">Stream unavailable — using capture mode</span>
+          </div>
+          <div class="stream-label"><div class="live-dot"></div>LIVE</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end main-grid -->
+</div><!-- end wrapper -->
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- ══════════ INFOGRAPHIC MODAL ══════════ -->
+<div id="info-modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <div class="modal-close" onclick="closeModal()">✕</div>
+    <div class="modal-content">
+      <div class="modal-title">SCAN INFOGRAPHIC</div>
+      <div class="modal-grid">
+        <div class="modal-img-wrap">
+          <img id="modal-img" src="" alt="Scanned plant"/>
+          <div class="modal-img-badge" id="modal-ts"></div>
+        </div>
+        <div class="info-cards">
+          <div class="info-card" id="modal-pred-card">
+            <div class="info-card-label">Detected Condition</div>
+            <div class="info-card-value" id="modal-cond">—</div>
+            <div class="info-card-sub" id="modal-crop">—</div>
+            <div class="modal-conf-bar-bg">
+              <div class="modal-conf-bar-fill" id="modal-bar" style="width:0%"></div>
+            </div>
+            <div style="font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-top:6px;">
+              Confidence: <span id="modal-conf-pct" style="color:var(--text)">—</span>
+            </div>
+          </div>
+          <div class="info-card">
+            <div class="info-card-label">Pump Action</div>
+            <div class="info-card-value" id="modal-pump-name">—</div>
+            <div class="relay-row" id="modal-relay-row"></div>
+          </div>
+          <div class="info-card">
+            <div class="info-card-label">Scan Details</div>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+              <div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:12px;">
+                <span style="color:var(--muted)">Time</span><span id="modal-time-val">—</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:12px;">
+                <span style="color:var(--muted)">Relay #</span><span id="modal-relay-val">—</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:12px;">
+                <span style="color:var(--muted)">Raw Label</span>
+                <span id="modal-raw-val" style="color:var(--muted);font-size:10px">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="advice-section" id="modal-advice">
+        <div class="advice-title">Recommended Action</div>
+        <div class="advice-grid" id="modal-advice-grid"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const PUMP_COLORS = {
+  'Nitrogen':   '#4ade80',
+  'Potassium':  '#facc15',
+  'Phosphorus': '#f97316',
+  'Water':      '#38bdf8',
+  'None':       '#6b8f6b'
+};
+const CONDITION_COLORS = {
+  'Healthy':     '#22d3ee',
+  'Nitrogen':    '#4ade80',
+  'Phosphorus':  '#f97316',
+  'Potassium':   '#facc15',
+  'Water_Stress':'#38bdf8'
+};
+
+// Track last seen version — only redraw when server version changes
+let lastVersion = -1;
+
+function showToast(msg, color='#22c55e') {
+  const t = document.getElementById('toast');
+  t.innerHTML = msg;
+  t.style.borderColor = color;
+  t.style.display = 'block';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.style.display='none', 4000);
+}
+
+// ── CAPTURE button (manual / from dashboard) ──
+async function triggerCapture() {
+  const btn = document.getElementById('capture-btn');
+  const txt = document.getElementById('btn-text');
+  const sl  = document.getElementById('scan-line');
+
+  btn.classList.add('scanning');
+  txt.textContent = 'ANALYSING...';
+  sl.classList.add('active');
+
+  try {
+    const res = await fetch('/capture', {method:'POST'});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+
+    if (data.error) {
+      showToast('❌ ' + data.error, '#ef4444');
+      return;
+    }
+
+    // Directly paint result — don't wait for poll cycle
+    applyState({
+      image_b64:   data.image_b64,
+      prediction:  data.prediction,
+      confidence:  data.confidence,
+      pump_action: data.pump,
+      pump_relay:  data.relay,
+      pump_color:  PUMP_COLORS[data.pump] || '#6b8f6b',
+      timestamp:   data.timestamp,
+      scan_count:  null,   // will be refreshed by next poll
+      spraying:    data.relay > 0,
+      history:     null
+    });
+
+    // Also store image for any history entries that get updated next poll
+    if (data.image_b64 && data.timestamp && data.prediction) {
+      const k = data.timestamp + '|' + data.prediction;
+      historyImages[k] = data.image_b64;
+    }
+
+    showToast(
+      `✅ <b>${data.prediction}</b> &nbsp;|&nbsp; ${data.confidence}% &nbsp;|&nbsp; 💧 ${data.pump}`,
+      PUMP_COLORS[data.pump] || '#22c55e'
+    );
+
+  } catch(e) {
+    showToast('❌ Capture failed: ' + e.message, '#ef4444');
+    console.error(e);
+  } finally {
+    btn.classList.remove('scanning');
+    txt.textContent = '📸 CAPTURE & ANALYSE';
+    sl.classList.remove('active');
+  }
+}
+
+// ── Apply a full state object to the UI ──
+function applyState(data) {
+
+  // ── Image ──
+  if (data.image_b64) {
+    const img = document.getElementById('captured-img');
+    const ph  = document.getElementById('placeholder');
+    // Only swap src if image actually changed (avoids flicker)
+    const newSrc = 'data:image/jpeg;base64,' + data.image_b64;
+    if (img.src !== newSrc) img.src = newSrc;
+    img.style.display = 'block';
+    ph.style.display  = 'none';
+  }
+
+  // ── Timestamp ──
+  if (data.timestamp) {
+    const tsBadge = document.getElementById('ts-badge');
+    tsBadge.textContent  = data.timestamp;
+    tsBadge.style.display = 'block';
+    document.getElementById('img-timestamp').textContent = data.timestamp;
+  }
+
+  // ── Prediction ──
+  if (data.prediction && data.prediction !== 'Waiting...') {
+    const parts     = data.prediction.split('_');
+    const crop      = parts[0] || '';
+    const condKey   = parts.slice(1).join('_');
+    const condLabel = parts.slice(1).join(' ').replace(/_/g,' ');
+    const condColor = CONDITION_COLORS[condKey] || '#22c55e';
+
+    const predCard = document.getElementById('pred-card');
+    predCard.style.setProperty('--result-color', condColor);
+    predCard.classList.add('active');
+
+    const predVal = document.getElementById('pred-value');
+    predVal.textContent = condLabel || data.prediction;
+    predVal.style.color = condColor;
+
+    document.getElementById('pred-crop').textContent = crop ? `🌱 ${crop}` : '';
+
+    // Confidence bar
+    const conf = data.confidence || 0;
+    document.getElementById('conf-pct').textContent = conf + '%';
+    const bar = document.getElementById('conf-bar');
+    bar.style.setProperty('--result-color', condColor);
+    // Small delay so CSS transition fires
+    setTimeout(() => bar.style.width = conf + '%', 50);
+  }
+
+  // ── Pump ──
+  const pump      = data.pump_action || 'None';
+  const relay     = data.pump_relay  || 0;
+  const pumpColor = data.pump_color  || PUMP_COLORS[pump] || '#6b8f6b';
+
+  document.getElementById('pump-card').style.setProperty('--pump-color', pumpColor);
+  const pumpName = document.getElementById('pump-name');
+  pumpName.textContent = pump === 'None' ? 'No spray needed ✅' : pump + ' Fertilizer 💧';
+  pumpName.style.color = pumpColor;
+
+  const badge = document.getElementById('pump-badge');
+  if (data.spraying || relay > 0) {
+    badge.textContent      = 'SPRAYING';
+    badge.className        = 'pump-badge spraying';
+    badge.style.background = pumpColor + '33';
+    badge.style.color      = pumpColor;
+    badge.style.borderColor= pumpColor;
+  } else {
+    badge.textContent      = pump === 'None' ? 'IDLE' : 'DONE';
+    badge.className        = 'pump-badge';
+    badge.style.background = '';
+    badge.style.color      = '';
+    badge.style.borderColor= '';
+  }
+
+  // Relay LEDs
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById('relay-' + i);
+    if (i === relay) {
+      el.classList.add('on');
+      el.style.setProperty('--pump-color', pumpColor);
+    } else {
+      el.classList.remove('on');
+    }
+  }
+
+  // Scan counter
+  if (data.scan_count !== null && data.scan_count !== undefined) {
+    document.getElementById('scan-count').textContent = data.scan_count;
+  }
+
+  // History
+  if (data.history) {
+    storeHistoryImages(data.history, data.image_b64);
+    renderHistory(data.history);
+  }
+}
+
+// ── In-memory store: keep image_b64 keyed by "time|prediction" ──
+const historyImages = {};
+
+// ── Render history list ──
+function renderHistory(history) {
+  const list = document.getElementById('history-list');
+  if (!history || !history.length) {
+    list.innerHTML = '<div class="empty-history">No scans yet</div>';
+    return;
+  }
+  list.innerHTML = history.map((h, i) => {
+    const parts = (h.prediction || '').split('_');
+    const cond  = parts.slice(1).join(' ') || h.prediction;
+    const color = PUMP_COLORS[h.pump] || '#6b8f6b';
+    const key   = h.time + '|' + h.prediction;
+    return `<div class="history-item" onclick="openModal('${key}')" title="Click to view infographic">
+      <span class="history-time">${h.time}</span>
+      <span class="history-pred">${cond}</span>
+      <span class="history-conf">${h.confidence}%</span>
+      <span class="history-pump" style="color:${color};border-color:${color}55">${h.pump}</span>
+      <span style="font-size:10px;color:var(--muted);margin-left:2px" title="View infographic">🔍</span>
+    </div>`;
+  }).join('');
+}
+
+// ── Save image when new state arrives ──
+function storeHistoryImages(history, image_b64) {
+  if (!history || !image_b64) return;
+  // The latest (index 0) entry matches the current image
+  if (history.length > 0) {
+    const h   = history[0];
+    const key = h.time + '|' + h.prediction;
+    if (!historyImages[key]) historyImages[key] = image_b64;
+  }
+}
+
+// ── Advice database per condition ──
+const ADVICE_DB = {
+  'Nitrogen': [
+    { icon:'🌿', label:'Symptom',   val:'Yellowing older leaves' },
+    { icon:'💊', label:'Fertilizer', val:'Urea / Ammonium Nitrate' },
+    { icon:'💧', label:'Apply via',  val:'Nitrogen Pump (R1)' },
+    { icon:'📅', label:'Frequency', val:'Every 2–3 weeks' },
+    { icon:'⚠️', label:'Severity',  val:'Moderate — act soon' },
+    { icon:'✅', label:'Outcome',    val:'Green-up in 5–7 days' },
+  ],
+  'Phosphorus': [
+    { icon:'🍂', label:'Symptom',   val:'Purple/reddish leaf tint' },
+    { icon:'💊', label:'Fertilizer', val:'Superphosphate' },
+    { icon:'💧', label:'Apply via',  val:'Phosphorus Pump (R3)' },
+    { icon:'📅', label:'Frequency', val:'Every 3–4 weeks' },
+    { icon:'⚠️', label:'Severity',  val:'Moderate' },
+    { icon:'✅', label:'Outcome',    val:'Recovery in 7–10 days' },
+  ],
+  'Potassium': [
+    { icon:'🍃', label:'Symptom',   val:'Brown leaf edges / tip burn' },
+    { icon:'💊', label:'Fertilizer', val:'Potassium Chloride' },
+    { icon:'💧', label:'Apply via',  val:'Potassium Pump (R2)' },
+    { icon:'📅', label:'Frequency', val:'Every 2–4 weeks' },
+    { icon:'⚠️', label:'Severity',  val:'Moderate' },
+    { icon:'✅', label:'Outcome',    val:'Stabilises in 5–8 days' },
+  ],
+  'Water_Stress': [
+    { icon:'🥀', label:'Symptom',   val:'Wilting / dry leaf curl' },
+    { icon:'💊', label:'Treatment',  val:'Irrigation required' },
+    { icon:'💧', label:'Apply via',  val:'Water Pump (R4)' },
+    { icon:'📅', label:'Frequency', val:'Check soil moisture daily' },
+    { icon:'⚠️', label:'Severity',  val:'High — act immediately' },
+    { icon:'✅', label:'Outcome',    val:'Recovery within 24 h' },
+  ],
+  'Healthy': [
+    { icon:'🌱', label:'Status',    val:'No deficiency detected' },
+    { icon:'💊', label:'Action',    val:'No fertilizer needed' },
+    { icon:'💧', label:'Pump',      val:'None activated' },
+    { icon:'📅', label:'Next scan', val:'Routine monitoring' },
+    { icon:'⚠️', label:'Severity',  val:'None' },
+    { icon:'✅', label:'Outcome',   val:'Plant is thriving!' },
+  ]
+};
+
+const RELAY_NAMES = { 1:'Nitrogen (R1)', 2:'Potassium (R2)', 3:'Phosphorus (R3)', 4:'Water (R4)' };
+
+// ── Open infographic modal ──
+function openModal(key) {
+  // Derive prediction from key
+  const [time, prediction] = key.split('|');
+  const img_b64 = historyImages[key] || null;
+
+  const parts    = (prediction || '').split('_');
+  const crop     = parts[0] || '';
+  const condKey  = parts.slice(1).join('_');
+  const condLabel= parts.slice(1).join(' ').replace(/_/g,' ') || prediction;
+
+  const PUMP_MAP_LOCAL = {
+    'Potato_Nitrogen':     {pump:'Nitrogen',   relay:1, color:'#4ade80'},
+    'Potato_Phosphorus':   {pump:'Phosphorus', relay:3, color:'#f97316'},
+    'Potato_Potassium':    {pump:'Potassium',  relay:2, color:'#facc15'},
+    'Potato_Water_Stress': {pump:'Water',      relay:4, color:'#38bdf8'},
+    'Tomato_Nitrogen':     {pump:'Nitrogen',   relay:1, color:'#4ade80'},
+    'Tomato_Phosphorus':   {pump:'Phosphorus', relay:3, color:'#f97316'},
+    'Tomato_Potassium':    {pump:'Potassium',  relay:2, color:'#facc15'},
+    'Tomato_Water_Stress': {pump:'Water',      relay:4, color:'#38bdf8'},
+    'Potato_Healthy':      {pump:'None',       relay:0, color:'#22d3ee'},
+    'Tomato_Healthy':      {pump:'None',       relay:0, color:'#22d3ee'},
+  };
+
+  const pumpInfo = PUMP_MAP_LOCAL[prediction] || {pump:'None', relay:0, color:'#6b8f6b'};
+  const condColor= CONDITION_COLORS[condKey] || '#22c55e';
+
+  // Image
+  const modalImg = document.getElementById('modal-img');
+  if (img_b64) {
+    modalImg.src = 'data:image/jpeg;base64,' + img_b64;
+    modalImg.style.display = 'block';
+  } else {
+    modalImg.src = '';
+    modalImg.style.display = 'none';
+    // Show a placeholder
+    modalImg.parentElement.insertAdjacentHTML('afterbegin',
+      '<div id="modal-no-img" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#6b8f6b;flex-direction:column;gap:8px"><span style="font-size:40px;opacity:0.3">📷</span><span style="font-size:11px;font-family:monospace">Image not stored</span></div>');
+  }
+  document.getElementById('modal-ts').textContent = time;
+
+  // Condition card
+  document.getElementById('modal-pred-card').style.borderColor = condColor;
+  document.getElementById('modal-cond').textContent  = condLabel || '—';
+  document.getElementById('modal-cond').style.color  = condColor;
+  document.getElementById('modal-crop').textContent  = crop ? '🌱 ' + crop : '';
+
+  // Find confidence from history list
+  let conf = 0;
+  for (const [k, v] of Object.entries(historyImages)) {
+    // can't recover conf from key — we'll look it up from DOM history items
+  }
+  // Read conf from rendered history
+  const histItems = document.querySelectorAll('.history-item');
+  histItems.forEach(el => {
+    const t = el.querySelector('.history-time');
+    const c = el.querySelector('.history-conf');
+    if (t && t.textContent === time && c) conf = parseFloat(c.textContent) || 0;
+  });
+
+  document.getElementById('modal-conf-pct').textContent = conf + '%';
+  const bar = document.getElementById('modal-bar');
+  bar.style.setProperty('--bar-color', condColor);
+  setTimeout(() => bar.style.width = conf + '%', 80);
+
+  // Pump card
+  document.getElementById('modal-pump-name').textContent = pumpInfo.pump === 'None' ? 'No spray needed ✅' : pumpInfo.pump + ' Fertilizer 💧';
+  document.getElementById('modal-pump-name').style.color  = pumpInfo.color;
+
+  const relayRow = document.getElementById('modal-relay-row');
+  relayRow.innerHTML = [1,2,3,4].map(r => {
+    const active = r === pumpInfo.relay;
+    return `<div class="relay-pill ${active ? 'active' : ''}" style="--pill-color:${pumpInfo.color}">
+      <div class="relay-pill-dot"></div>${RELAY_NAMES[r]}
+    </div>`;
+  }).join('');
+
+  // Details
+  document.getElementById('modal-time-val').textContent   = time;
+  document.getElementById('modal-relay-val').textContent  = pumpInfo.relay > 0 ? 'R' + pumpInfo.relay : 'None';
+  document.getElementById('modal-raw-val').textContent    = prediction;
+
+  // Advice
+  const adviceKey  = condKey || 'Healthy';
+  const adviceData = ADVICE_DB[adviceKey] || ADVICE_DB['Healthy'];
+  document.getElementById('modal-advice-grid').innerHTML = adviceData.map(a =>
+    `<div class="advice-item">
+      <div class="advice-icon">${a.icon}</div>
+      <div class="advice-label">${a.label}</div>
+      <div class="advice-val" style="color:${condColor}">${a.val}</div>
+    </div>`
+  ).join('');
+
+  document.getElementById('info-modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  document.getElementById('info-modal').classList.remove('open');
+  document.body.style.overflow = '';
+  // Remove any no-img placeholder we injected
+  const ni = document.getElementById('modal-no-img');
+  if (ni) ni.remove();
+  // Reset bar
+  document.getElementById('modal-bar').style.width = '0%';
+}
+
+// ── Poll /state every 1.5s, only redraw when version changes ──
+async function pollState() {
+  try {
+    const res  = await fetch('/state');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+
+    // Server online indicator
+    document.getElementById('server-dot').style.background  = '#22c55e';
+    document.getElementById('server-dot').style.boxShadow   = '0 0 10px #22c55e';
+    document.getElementById('server-label').textContent     = 'SERVER ONLINE';
+
+    // Only repaint if something actually changed
+    if (data.version !== lastVersion) {
+      lastVersion = data.version;
+      applyState(data);
+      console.log('Dashboard updated — version', data.version, '|', data.prediction);
+    } else {
+      // Still update spraying status even without a new scan
+      if (data.scan_count !== undefined) {
+        document.getElementById('scan-count').textContent = data.scan_count;
+      }
+      const badge = document.getElementById('pump-badge');
+      if (!data.spraying && badge.textContent === 'SPRAYING') {
+        badge.textContent = 'DONE';
+        badge.className   = 'pump-badge';
+      }
+    }
+
+  } catch(e) {
+    document.getElementById('server-dot').style.background = '#ef4444';
+    document.getElementById('server-dot').style.boxShadow  = '0 0 10px #ef4444';
+    document.getElementById('server-label').textContent    = 'SERVER OFFLINE';
+  }
+}
+
+// Close modal on Escape key
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+setInterval(pollState, 1500);
+pollState();
+</script>
+</body>
+</html>
