@@ -1,0 +1,3 @@
+Timestamp,Prediction,Crop,Condition,Confidence(%),Pump
+10:23:42,Potato_Healthy,Potato,Healthy,49.9,None
+10:24:31,Tomato_Nitrogen,Tomato,Nitrogen,82.5,Nitrogen
