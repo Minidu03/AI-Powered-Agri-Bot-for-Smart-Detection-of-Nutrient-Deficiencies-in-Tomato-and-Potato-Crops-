@@ -1,127 +1,107 @@
-#include <BluetoothSerial.h>
-#include <WiFi.h>
-#include <HTTPClient.h>
-
+#include "BluetoothSerial.h"
 BluetoothSerial SerialBT;
 
-// WiFi
-const char* ssid      = "Dialog 4G 082";
-const char* password  = "Fbfm72nH";
-const char* serverURL = "http://192.168.8.101:5000/capture";
+// Motor pins (L298N)
+#define IN1 26
+#define IN2 27
+#define IN3 14
+#define IN4 12
 
-// Motors
-#define LM_IN1 26
-#define LM_IN2 27
-#define RM_IN1 14
-#define RM_IN2 12
+// Pump / Relay pins
+#define PUMP1 32
+#define PUMP2 33
+#define PUMP3 25
+#define PUMP4 13
+#define FERT1 15
+#define FERT2 2
+#define FERT3 4
 
-// Pumps
-#define N_IN1 25
-#define N_IN2 33
-#define K_IN1 32
-#define K_IN2 34
-#define P_IN1 13
-#define P_IN2 15
-#define W_IN1 4
-#define W_IN2 16
+char cmd;
 
 void setup() {
   Serial.begin(115200);
-  SerialBT.begin("AgriRobot");
+  SerialBT.begin("FarmRobot"); // Bluetooth name
 
-  const uint8_t pins[] = {LM_IN1, LM_IN2, RM_IN1, RM_IN2, N_IN1, N_IN2, K_IN1, K_IN2, P_IN1, P_IN2, W_IN1, W_IN2};
-  for (uint8_t p : pins) { pinMode(p, OUTPUT); digitalWrite(p, LOW); }
+  // Motor pins
+  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
 
-  WiFi.begin(ssid, password);
-  Serial.print("WiFi");
-  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
-  Serial.println("OK:" + WiFi.localIP().toString());
-  SerialBT.println("Ready. F/B/L/R/S | N/K/P/W | C");
+  // Pumps
+  pinMode(PUMP1, OUTPUT);
+  pinMode(PUMP2, OUTPUT);
+  pinMode(PUMP3, OUTPUT);
+  pinMode(PUMP4, OUTPUT);
+
+  pinMode(FERT1, OUTPUT);
+  pinMode(FERT2, OUTPUT);
+  pinMode(FERT3, OUTPUT);
+
+  stopRobot();
 }
 
 void loop() {
-  if (!SerialBT.available()) return;
+  if (SerialBT.available()) {
+    cmd = SerialBT.read();
+    Serial.println(cmd);
 
-  String cmd = SerialBT.readStringUntil('\n');
-  cmd.trim();
-  if (cmd.length() == 0) return;
+    // 🚗 Movement control
+    if (cmd == 'F') forward();
+    else if (cmd == 'B') backward();
+    else if (cmd == 'L') left();
+    else if (cmd == 'R') right();
+    else if (cmd == 'S') stopRobot();
 
-  char c = toupper(cmd[0]);
-  Serial.println(cmd);
+    // 💧 Water pumps
+    else if (cmd == '1') digitalWrite(PUMP1, HIGH);
+    else if (cmd == '2') digitalWrite(PUMP1, LOW);
 
-  switch (c) {
-    case 'F': drive(HIGH, LOW, HIGH, LOW, "Fwd"); break;
-    case 'B': drive(LOW, HIGH, LOW, HIGH, "Bck"); break;
-    case 'L': drive(LOW, LOW, HIGH, LOW,  "Lft"); break;
-    case 'R': drive(HIGH, LOW, LOW, LOW,  "Rgt"); break;
-    case 'S': stopCar(); break;
-    case '1': spray(N_IN1, N_IN2, "N"); break;
-    case '2': spray(K_IN1, K_IN2, "K"); break;
-    case '3': spray(P_IN1, P_IN2, "P"); break;
-    case '4': spray(W_IN1, W_IN2, "W"); break;
-    case 'Y': aiScan(); break;
-    default:  SerialBT.println("?"); break;
+    else if (cmd == '3') digitalWrite(PUMP2, HIGH);
+    else if (cmd == '4') digitalWrite(PUMP2, LOW);
+
+    else if (cmd == '5') digitalWrite(PUMP3, HIGH);
+    else if (cmd == '6') digitalWrite(PUMP3, LOW);
+
+    else if (cmd == '7') digitalWrite(PUMP4, HIGH);
+    else if (cmd == '8') digitalWrite(PUMP4, LOW);
+
+    // 🌿 Fertilizer
+    else if (cmd == '9') digitalWrite(FERT1, HIGH);
+    else if (cmd == '0') digitalWrite(FERT1, LOW);
   }
 }
 
-void drive(uint8_t l1, uint8_t l2, uint8_t r1, uint8_t r2, const char* name) {
-  digitalWrite(LM_IN1, l1); digitalWrite(LM_IN2, l2);
-  digitalWrite(RM_IN1, r1); digitalWrite(RM_IN2, r2);
-  SerialBT.println(name);
+// 🚗 Movement functions
+void forward() {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
 }
 
-void stopCar() {
-  digitalWrite(LM_IN1, LOW); digitalWrite(LM_IN2, LOW);
-  digitalWrite(RM_IN1, LOW); digitalWrite(RM_IN2, LOW);
-  SerialBT.println("Stopped");
+void backward() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
 }
 
-void spray(uint8_t in1, uint8_t in2, const char* label) {
-  SerialBT.print(label); SerialBT.println(" ON");
-  digitalWrite(in1, HIGH); digitalWrite(in2, LOW);
-  delay(4000);
-  digitalWrite(in1, LOW); digitalWrite(in2, LOW);
-  SerialBT.println("Done");
+void left() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
 }
 
-void aiScan() {
-  if (WiFi.status() != WL_CONNECTED) {
-    SerialBT.println("No WiFi");
-    return;
-  }
+void right() {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+}
 
-  HTTPClient http;
-  http.begin(serverURL);
-  http.setTimeout(10000);
-
-  int code = http.GET();
-  if (code <= 0) {
-    SerialBT.println("Server err");
-    http.end();
-    return;
-  }
-
-  String resp = http.getString();
-  http.end();
-
-  SerialBT.println(resp);  // print full response for debugging
-
-  // Extract the "pump" field value from JSON e.g. "pump":"Nitrogen"
-  String pump = "";
-  int pumpIdx = resp.indexOf("\"pump\":\"");
-  if (pumpIdx >= 0) {
-    int start = pumpIdx + 8;  // skip past "pump":"
-    int end   = resp.indexOf("\"", start);
-    pump      = resp.substring(start, end);
-  }
-
-  pump.toLowerCase();
-  SerialBT.println("Pump: " + pump);
-
-  if      (pump == "nitrogen")   spray(N_IN1, N_IN2, "N");
-  else if (pump == "potassium")  spray(K_IN1, K_IN2, "K");
-  else if (pump == "phosphorus") spray(P_IN1, P_IN2, "P");
-  else if (pump == "water")      spray(W_IN1, W_IN2, "W");
-  else if (pump == "none")       SerialBT.println("Healthy - no spray");
-  else                           SerialBT.println("Unknown: " + pump);
+void stopRobot() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
 }
