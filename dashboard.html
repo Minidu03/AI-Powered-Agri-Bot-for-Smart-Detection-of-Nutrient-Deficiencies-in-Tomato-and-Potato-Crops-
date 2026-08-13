@@ -484,8 +484,81 @@
     padding:3px 10px; border-radius:4px;
     font-family:var(--font-mono); font-size:11px; font-weight:500;
     display:flex; align-items:center; gap:6px;
+    transition: background 0.4s;
   }
+  .stream-label.offline { background:rgba(100,100,100,0.85); }
   .live-dot { width:6px; height:6px; border-radius:50%; background:#fff; animation:pulse 1s infinite; }
+
+  /* Rich offline / skeleton state */
+  #stream-fallback {
+    display:none; position:absolute; inset:0;
+    flex-direction:column; align-items:center; justify-content:center;
+    gap:0; background:#0a0f0a;
+  }
+  .offline-icon-ring {
+    width:72px; height:72px; border-radius:50%;
+    border:2px solid #1e2e1e;
+    display:flex; align-items:center; justify-content:center;
+    font-size:30px; margin-bottom:14px;
+    position:relative;
+  }
+  /* Animated radar ping */
+  .offline-icon-ring::before {
+    content:'';
+    position:absolute; inset:-8px; border-radius:50%;
+    border:1.5px solid rgba(239,68,68,0.35);
+    animation: radar 2s ease-out infinite;
+  }
+  .offline-icon-ring::after {
+    content:'';
+    position:absolute; inset:-18px; border-radius:50%;
+    border:1px solid rgba(239,68,68,0.15);
+    animation: radar 2s ease-out 0.5s infinite;
+  }
+  @keyframes radar {
+    0%   { transform:scale(0.7); opacity:1; }
+    100% { transform:scale(1.4); opacity:0; }
+  }
+  .offline-title {
+    font-family:var(--font-mono); font-size:13px; font-weight:600;
+    color:#ef4444; letter-spacing:1px; margin-bottom:6px;
+  }
+  .offline-sub {
+    font-family:var(--font-mono); font-size:11px; color:var(--muted);
+    margin-bottom:20px; text-align:center; padding:0 20px;
+  }
+  .offline-details {
+    display:flex; flex-direction:column; gap:6px; width:100%;
+    max-width:280px;
+  }
+  .offline-detail-row {
+    display:flex; justify-content:space-between; align-items:center;
+    background:var(--surface2); border:1px solid var(--border);
+    border-radius:6px; padding:7px 12px;
+    font-family:var(--font-mono); font-size:10px;
+  }
+  .offline-detail-row .label { color:var(--muted); }
+  .offline-detail-row .val   { color:var(--text); }
+  .offline-detail-row .val.err { color:#ef4444; }
+  .offline-retry-btn {
+    margin-top:16px; padding:8px 20px;
+    background:transparent; border:1px solid #1e2e1e;
+    border-radius:8px; color:var(--muted);
+    font-family:var(--font-mono); font-size:11px;
+    cursor:pointer; transition:all 0.2s; letter-spacing:1px;
+  }
+  .offline-retry-btn:hover { border-color:var(--green); color:var(--green); }
+
+  /* Skeleton shimmer for initial loading */
+  .stream-skeleton {
+    display:none; position:absolute; inset:0;
+    background: linear-gradient(90deg,
+      var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
+    background-size:200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  .stream-skeleton.visible { display:block; }
 
   /* Notification toast */
   #toast {
@@ -619,17 +692,55 @@
     <div class="panel stream-panel">
       <div class="panel-header">
         <span class="panel-title"><span class="dot"></span>LIVE CAMERA FEED</span>
-        <span style="font-family:var(--font-mono);font-size:11px;color:var(--muted);">{{ cam_ip }}</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="cam-status-badge" style="font-family:var(--font-mono);font-size:10px;padding:3px 10px;border-radius:20px;background:rgba(34,197,94,0.1);color:var(--green);border:1px solid rgba(34,197,94,0.3);">CONNECTING...</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--muted);">{{ cam_ip }}</span>
+        </div>
       </div>
       <div class="panel-body">
-        <div class="stream-wrap">
-          <img src="{{ stream_url }}" alt="Live stream"
-               onerror="this.style.display='none'; document.getElementById('stream-fallback').style.display='flex'"/>
-          <div id="stream-fallback" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:var(--muted);">
-            <span style="font-size:32px;opacity:0.3">📡</span>
-            <span style="font-family:var(--font-mono);font-size:12px">Stream unavailable — using capture mode</span>
+        <div class="stream-wrap" id="stream-wrap">
+
+          <!-- Skeleton shown while stream first loads -->
+          <div class="stream-skeleton visible" id="stream-skeleton"></div>
+
+          <!-- Actual stream image -->
+          <img id="stream-img" src="{{ stream_url }}" alt="Live stream"
+               style="opacity:0;transition:opacity 0.5s;"
+               onload="onStreamLoad()"
+               onerror="onStreamError()"/>
+
+          <!-- Rich offline panel -->
+          <div id="stream-fallback">
+            <div class="offline-icon-ring">📡</div>
+            <div class="offline-title">CAMERA OFFLINE</div>
+            <div class="offline-sub">ESP32-CAM is unreachable.<br>Capture mode still works via the button above.</div>
+            <div class="offline-details">
+              <div class="offline-detail-row">
+                <span class="label">Camera IP</span>
+                <span class="val">{{ cam_ip }}</span>
+              </div>
+              <div class="offline-detail-row">
+                <span class="label">Stream port</span>
+                <span class="val">:81/stream</span>
+              </div>
+              <div class="offline-detail-row">
+                <span class="label">Status</span>
+                <span class="val err" id="offline-err-msg">Connection refused</span>
+              </div>
+              <div class="offline-detail-row">
+                <span class="label">Last attempt</span>
+                <span class="val" id="offline-last-attempt">—</span>
+              </div>
+            </div>
+            <button class="offline-retry-btn" onclick="retryStream()">↺ RETRY CONNECTION</button>
           </div>
-          <div class="stream-label"><div class="live-dot"></div>LIVE</div>
+
+          <!-- LIVE / OFFLINE label badge -->
+          <div class="stream-label" id="stream-badge">
+            <div class="live-dot" id="live-dot"></div>
+            <span id="stream-badge-text">LIVE</span>
+          </div>
+
         </div>
       </div>
     </div>
@@ -750,16 +861,10 @@ async function triggerCapture() {
       pump_relay:  data.relay,
       pump_color:  PUMP_COLORS[data.pump] || '#6b8f6b',
       timestamp:   data.timestamp,
-      scan_count:  null,   // will be refreshed by next poll
+      scan_count:  null,
       spraying:    data.relay > 0,
       history:     null
     });
-
-    // Also store image for any history entries that get updated next poll
-    if (data.image_b64 && data.timestamp && data.prediction) {
-      const k = data.timestamp + '|' + data.prediction;
-      historyImages[k] = data.image_b64;
-    }
 
     showToast(
       `✅ <b>${data.prediction}</b> &nbsp;|&nbsp; ${data.confidence}% &nbsp;|&nbsp; 💧 ${data.pump}`,
@@ -868,16 +973,17 @@ function applyState(data) {
 
   // History
   if (data.history) {
-    storeHistoryImages(data.history, data.image_b64);
     renderHistory(data.history);
   }
 }
 
-// ── In-memory store: keep image_b64 keyed by "time|prediction" ──
-const historyImages = {};
+// ── Server-owned history (includes image_b64 per entry) ──
+// We keep the last-received history array so openModal can look up images
+let latestHistory = [];
 
 // ── Render history list ──
 function renderHistory(history) {
+  latestHistory = history; // cache for modal lookups
   const list = document.getElementById('history-list');
   if (!history || !history.length) {
     list.innerHTML = '<div class="empty-history">No scans yet</div>';
@@ -887,8 +993,7 @@ function renderHistory(history) {
     const parts = (h.prediction || '').split('_');
     const cond  = parts.slice(1).join(' ') || h.prediction;
     const color = PUMP_COLORS[h.pump] || '#6b8f6b';
-    const key   = h.time + '|' + h.prediction;
-    return `<div class="history-item" onclick="openModal('${key}')" title="Click to view infographic">
+    return `<div class="history-item" onclick="openModal(${i})" title="Click to view infographic">
       <span class="history-time">${h.time}</span>
       <span class="history-pred">${cond}</span>
       <span class="history-conf">${h.confidence}%</span>
@@ -896,17 +1001,6 @@ function renderHistory(history) {
       <span style="font-size:10px;color:var(--muted);margin-left:2px" title="View infographic">🔍</span>
     </div>`;
   }).join('');
-}
-
-// ── Save image when new state arrives ──
-function storeHistoryImages(history, image_b64) {
-  if (!history || !image_b64) return;
-  // The latest (index 0) entry matches the current image
-  if (history.length > 0) {
-    const h   = history[0];
-    const key = h.time + '|' + h.prediction;
-    if (!historyImages[key]) historyImages[key] = image_b64;
-  }
 }
 
 // ── Advice database per condition ──
@@ -955,13 +1049,17 @@ const ADVICE_DB = {
 
 const RELAY_NAMES = { 1:'Nitrogen (R1)', 2:'Potassium (R2)', 3:'Phosphorus (R3)', 4:'Water (R4)' };
 
-// ── Open infographic modal ──
-function openModal(key) {
-  // Derive prediction from key
-  const [time, prediction] = key.split('|');
-  const img_b64 = historyImages[key] || null;
+// ── Open infographic modal — idx is the index into latestHistory ──
+function openModal(idx) {
+  const h = latestHistory[idx];
+  if (!h) return;
 
-  const parts    = (prediction || '').split('_');
+  const prediction = h.prediction || '';
+  const time       = h.time || '';
+  const img_b64    = h.image_b64 || null;
+  const conf       = h.confidence || 0;
+
+  const parts    = prediction.split('_');
   const crop     = parts[0] || '';
   const condKey  = parts.slice(1).join('_');
   const condLabel= parts.slice(1).join(' ').replace(/_/g,' ') || prediction;
@@ -979,67 +1077,55 @@ function openModal(key) {
     'Tomato_Healthy':      {pump:'None',       relay:0, color:'#22d3ee'},
   };
 
-  const pumpInfo = PUMP_MAP_LOCAL[prediction] || {pump:'None', relay:0, color:'#6b8f6b'};
-  const condColor= CONDITION_COLORS[condKey] || '#22c55e';
+  const pumpInfo  = PUMP_MAP_LOCAL[prediction] || {pump:'None', relay:0, color:'#6b8f6b'};
+  const condColor = CONDITION_COLORS[condKey] || '#22c55e';
 
-  // Image
+  // ── Image: server now provides it directly in history entry ──
   const modalImg = document.getElementById('modal-img');
+  const noImgEl  = document.getElementById('modal-no-img');
+  if (noImgEl) noImgEl.remove();
+
   if (img_b64) {
     modalImg.src = 'data:image/jpeg;base64,' + img_b64;
     modalImg.style.display = 'block';
   } else {
     modalImg.src = '';
     modalImg.style.display = 'none';
-    // Show a placeholder
     modalImg.parentElement.insertAdjacentHTML('afterbegin',
-      '<div id="modal-no-img" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#6b8f6b;flex-direction:column;gap:8px"><span style="font-size:40px;opacity:0.3">📷</span><span style="font-size:11px;font-family:monospace">Image not stored</span></div>');
+      '<div id="modal-no-img" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#6b8f6b;flex-direction:column;gap:8px"><span style="font-size:40px;opacity:0.3">📷</span><span style="font-size:11px;font-family:monospace">Image not available</span></div>');
   }
   document.getElementById('modal-ts').textContent = time;
 
-  // Condition card
+  // ── Condition card ──
   document.getElementById('modal-pred-card').style.borderColor = condColor;
-  document.getElementById('modal-cond').textContent  = condLabel || '—';
-  document.getElementById('modal-cond').style.color  = condColor;
-  document.getElementById('modal-crop').textContent  = crop ? '🌱 ' + crop : '';
-
-  // Find confidence from history list
-  let conf = 0;
-  for (const [k, v] of Object.entries(historyImages)) {
-    // can't recover conf from key — we'll look it up from DOM history items
-  }
-  // Read conf from rendered history
-  const histItems = document.querySelectorAll('.history-item');
-  histItems.forEach(el => {
-    const t = el.querySelector('.history-time');
-    const c = el.querySelector('.history-conf');
-    if (t && t.textContent === time && c) conf = parseFloat(c.textContent) || 0;
-  });
+  document.getElementById('modal-cond').textContent = condLabel || '—';
+  document.getElementById('modal-cond').style.color = condColor;
+  document.getElementById('modal-crop').textContent = crop ? '🌱 ' + crop : '';
 
   document.getElementById('modal-conf-pct').textContent = conf + '%';
   const bar = document.getElementById('modal-bar');
   bar.style.setProperty('--bar-color', condColor);
+  bar.style.width = '0%';
   setTimeout(() => bar.style.width = conf + '%', 80);
 
-  // Pump card
+  // ── Pump card ──
   document.getElementById('modal-pump-name').textContent = pumpInfo.pump === 'None' ? 'No spray needed ✅' : pumpInfo.pump + ' Fertilizer 💧';
-  document.getElementById('modal-pump-name').style.color  = pumpInfo.color;
+  document.getElementById('modal-pump-name').style.color = pumpInfo.color;
 
-  const relayRow = document.getElementById('modal-relay-row');
-  relayRow.innerHTML = [1,2,3,4].map(r => {
+  document.getElementById('modal-relay-row').innerHTML = [1,2,3,4].map(r => {
     const active = r === pumpInfo.relay;
     return `<div class="relay-pill ${active ? 'active' : ''}" style="--pill-color:${pumpInfo.color}">
       <div class="relay-pill-dot"></div>${RELAY_NAMES[r]}
     </div>`;
   }).join('');
 
-  // Details
-  document.getElementById('modal-time-val').textContent   = time;
-  document.getElementById('modal-relay-val').textContent  = pumpInfo.relay > 0 ? 'R' + pumpInfo.relay : 'None';
-  document.getElementById('modal-raw-val').textContent    = prediction;
+  // ── Scan details ──
+  document.getElementById('modal-time-val').textContent  = time;
+  document.getElementById('modal-relay-val').textContent = pumpInfo.relay > 0 ? 'R' + pumpInfo.relay : 'None';
+  document.getElementById('modal-raw-val').textContent   = prediction;
 
-  // Advice
-  const adviceKey  = condKey || 'Healthy';
-  const adviceData = ADVICE_DB[adviceKey] || ADVICE_DB['Healthy'];
+  // ── Advice ──
+  const adviceData = ADVICE_DB[condKey] || ADVICE_DB['Healthy'];
   document.getElementById('modal-advice-grid').innerHTML = adviceData.map(a =>
     `<div class="advice-item">
       <div class="advice-icon">${a.icon}</div>
@@ -1055,10 +1141,8 @@ function openModal(key) {
 function closeModal() {
   document.getElementById('info-modal').classList.remove('open');
   document.body.style.overflow = '';
-  // Remove any no-img placeholder we injected
   const ni = document.getElementById('modal-no-img');
   if (ni) ni.remove();
-  // Reset bar
   document.getElementById('modal-bar').style.width = '0%';
 }
 
@@ -1096,6 +1180,88 @@ async function pollState() {
     document.getElementById('server-dot').style.boxShadow  = '0 0 10px #ef4444';
     document.getElementById('server-label').textContent    = 'SERVER OFFLINE';
   }
+}
+
+// ── Stream online/offline state management ──
+let streamOnline = false;
+
+function onStreamLoad() {
+  if (streamOnline) return; // already handled
+  streamOnline = true;
+
+  // Hide skeleton + show image
+  document.getElementById('stream-skeleton').classList.remove('visible');
+  document.getElementById('stream-fallback').style.display = 'none';
+  const img = document.getElementById('stream-img');
+  img.style.opacity = '1';
+
+  // Badge → LIVE (green)
+  const badge = document.getElementById('stream-badge');
+  badge.classList.remove('offline');
+  document.getElementById('stream-badge-text').textContent = 'LIVE';
+  document.getElementById('live-dot').style.background = '#fff';
+  document.getElementById('live-dot').style.animation  = 'pulse 1s infinite';
+
+  // Header status pill
+  const pill = document.getElementById('cam-status-badge');
+  pill.textContent   = 'LIVE';
+  pill.style.background   = 'rgba(34,197,94,0.12)';
+  pill.style.color        = '#22c55e';
+  pill.style.borderColor  = 'rgba(34,197,94,0.35)';
+}
+
+function onStreamError() {
+  streamOnline = false;
+
+  // Hide skeleton + stream image, show rich offline panel
+  document.getElementById('stream-skeleton').classList.remove('visible');
+  const img = document.getElementById('stream-img');
+  img.style.opacity = '0';
+  const fallback = document.getElementById('stream-fallback');
+  fallback.style.display = 'flex';
+
+  // Timestamp of this failure
+  document.getElementById('offline-last-attempt').textContent = new Date().toLocaleTimeString();
+
+  // Badge → OFFLINE (red/gray)
+  const badge = document.getElementById('stream-badge');
+  badge.classList.add('offline');
+  document.getElementById('stream-badge-text').textContent = 'OFFLINE';
+  document.getElementById('live-dot').style.background = '#ef4444';
+  document.getElementById('live-dot').style.animation  = 'none';
+
+  // Header status pill
+  const pill = document.getElementById('cam-status-badge');
+  pill.textContent        = 'CAM OFFLINE';
+  pill.style.background   = 'rgba(239,68,68,0.1)';
+  pill.style.color        = '#ef4444';
+  pill.style.borderColor  = 'rgba(239,68,68,0.3)';
+
+  // Update error message from last known info
+  document.getElementById('offline-err-msg').textContent = 'Connection refused';
+}
+
+function retryStream() {
+  streamOnline = false;
+
+  // Show skeleton while retrying
+  document.getElementById('stream-skeleton').classList.add('visible');
+  document.getElementById('stream-fallback').style.display = 'none';
+  const img = document.getElementById('stream-img');
+  img.style.opacity = '0';
+
+  // Force reload the stream img by busting cache
+  const base = img.src.split('?')[0];
+  img.src = base + '?t=' + Date.now();
+
+  // Header pill → connecting
+  const pill = document.getElementById('cam-status-badge');
+  pill.textContent        = 'RETRYING...';
+  pill.style.background   = 'rgba(234,179,8,0.1)';
+  pill.style.color        = '#eab308';
+  pill.style.borderColor  = 'rgba(234,179,8,0.3)';
+
+  document.getElementById('offline-last-attempt').textContent = new Date().toLocaleTimeString();
 }
 
 // Close modal on Escape key
